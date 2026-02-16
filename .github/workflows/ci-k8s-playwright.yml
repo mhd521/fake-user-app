@@ -1,0 +1,101 @@
+name: CI - Kind + Playwright
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Build JAR ----
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+          cache: maven
+
+      - name: Build jar (skip tests)
+        run: mvn -q -DskipTests clean package
+
+      # ---- Build Docker image ----
+      - name: Build docker image
+        run: docker build -t fake-user-app:ci .
+
+      # ---- Create kind cluster ----
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+
+      - name: Load image into kind
+        run: kind load docker-image fake-user-app:ci --name ci
+
+      # ---- Deploy to Kubernetes ----
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/postgres.yaml
+          # Replace image in your deployment with the local kind image tag:
+          kubectl -n fake-user-app set image deployment/fake-user-app app=fake-user-app:ci || true
+          kubectl apply -f k8s/fake-user-app.yaml
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n fake-user-app rollout status statefulset/my-postgres-db-2 --timeout=180s || true
+          kubectl -n fake-user-app rollout status deployment/fake-user-app --timeout=180s
+
+      # ---- Port-forward app for Playwright ----
+      - name: Port-forward service
+        run: |
+          kubectl -n fake-user-app port-forward svc/fake-user-app 8080:8080 > /tmp/pf.log 2>&1 &
+          echo $! > /tmp/pf.pid
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8080/ > /dev/null; then
+              echo "App is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App never became reachable"
+          kubectl -n fake-user-app get pods,svc
+          kubectl -n fake-user-app logs -l app=fake-user-app --tail=200 || true
+          exit 1
+
+      # ---- Playwright ----
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright + deps
+        working-directory: playwright
+        run: |
+          npm ci
+          npx playwright install --with-deps
+
+      - name: Run Playwright tests
+        working-directory: playwright
+        env:
+          BASE_URL: http://127.0.0.1:8080
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright/playwright-report
+
+      # ---- Cleanup ----
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f /tmp/pf.pid ]; then kill "$(cat /tmp/pf.pid)" || true; fi
+          kind delete cluster --name ci

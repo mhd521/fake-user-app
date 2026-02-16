@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fake-user-app
+  namespace: fake-user-app
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: fakeuser.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fake-user-app
+                port:
+                  number: 8080

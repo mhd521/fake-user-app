@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fake-user-app
+  namespace: fake-user-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fake-user-app
+  template:
+    metadata:
+      labels:
+        app: fake-user-app
+    spec:
+      containers:
+        - name: app
+          image: hamoood5210/fake-user-app:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_URL
+              value: jdbc:postgresql://my-postgres-db-2:5432/fake_user_app
+            - name: DB_USERNAME
+              value: postgres
+            - name: DB_PASSWORD
+              value: admin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fake-user-app
+  namespace: fake-user-app
+spec:
+  selector:
+    app: fake-user-app
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
