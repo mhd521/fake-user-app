@@ -16,16 +16,16 @@ spec:
       containers:
         - name: app
           image: hamoood5210/fake-user-app:latest
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
-        - name: SPRING_DATASOURCE_URL
-          value: jdbc:postgresql://my-postgres-db-2:5432/fake_user_app
-        - name: SPRING_DATASOURCE_USERNAME
-          value: postgres
-        - name: SPRING_DATASOURCE_PASSWORD
-          value: admin
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://my-postgres-db-2:5432/fake_user_app
+            - name: SPRING_DATASOURCE_USERNAME
+              value: postgres
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: admin
 ---
 apiVersion: v1
 kind: Service
