@@ -40,17 +40,38 @@ jobs:
       # ---- Deploy to Kubernetes ----
       - name: Apply manifests
         run: |
-          kubectl create namespace fake-user-app --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/namespace.yaml
           kubectl apply -f k8s/postgres.yaml
-          # Replace image in your deployment with the local kind image tag:
-          kubectl -n fake-user-app set image deployment/fake-user-app app=fake-user-app:ci || true
           kubectl apply -f k8s/fake-user-app.yaml
+
+          # Ensure the Deployment uses the image we built and loaded into kind
+          kubectl -n fake-user-app set image deployment/fake-user-app app=fake-user-app:ci
+
+          # Ingress is optional for CI; don't fail if it can't apply
           kubectl apply -f k8s/ingress.yaml || true
 
       - name: Wait for rollout
         run: |
-          kubectl -n fake-user-app rollout status statefulset/my-postgres-db-2 --timeout=180s || true
-          kubectl -n fake-user-app rollout status deployment/fake-user-app --timeout=180s
+          set -e
+
+          # Wait for Postgres (StatefulSet). Don't fail the whole job if it takes longer.
+          kubectl -n fake-user-app rollout status statefulset/my-postgres-db-2 --timeout=240s || true
+
+          if ! kubectl -n fake-user-app rollout status deployment/fake-user-app --timeout=300s; then
+            echo "---- pods ----"
+            kubectl -n fake-user-app get pods -o wide || true
+
+            echo "---- describe app pods ----"
+            kubectl -n fake-user-app describe pods -l app=fake-user-app || true
+
+            echo "---- recent events ----"
+            kubectl -n fake-user-app get events --sort-by=.lastTimestamp | tail -n 200 || true
+
+            echo "---- app logs ----"
+            kubectl -n fake-user-app logs -l app=fake-user-app --tail=400 || true
+
+            exit 1
+          fi
 
       # ---- Port-forward app for Playwright ----
       - name: Port-forward service
@@ -58,7 +79,7 @@ jobs:
           kubectl -n fake-user-app port-forward svc/fake-user-app 8080:8080 > /tmp/pf.log 2>&1 &
           echo $! > /tmp/pf.pid
           for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:8080/ > /dev/null; then
+            if curl -fsS http://127.0.0.1:8080/ > /dev/null || curl -fsS http://127.0.0.1:8080/actuator/health > /dev/null; then
               echo "App is up"
               exit 0
             fi
