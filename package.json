@@ -1,0 +1,12 @@
+{
+  "name": "fake-user-app-tests",
+  "version": "1.0.0",
+  "description": "Playwright API tests for the fake-user-app portfolio project",
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.41.0",
+    "typescript": "^5.3.3"
+  }
+}

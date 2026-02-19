@@ -1,14 +1,20 @@
-FROM adoptopenjdk/openjdk11:jre
+# Stage 1: Build the JAR inside a Maven container
+FROM maven:3.8.4-openjdk-11-slim AS build
+WORKDIR /app
+COPY pom.xml .
+COPY src ./src
+RUN mvn clean package -DskipTests
 
-WORKDIR usr/app
+# Stage 2: Create the lightweight runtime image
+FROM eclipse-temurin:11-jre-focal
+WORKDIR /app
 
-COPY target/fake-user-app-0.0.1-SNAPSHOT.jar fake-user-app-0.0.1-SNAPSHOT.jar
+# Senior Signal: Security (Run as non-root)
+RUN groupadd -r spring && useradd -r -g spring spring
+USER spring:spring
 
-ENTRYPOINT ["java", "-jar", "fake-user-app-0.0.1-SNAPSHOT.jar"]
-# java -jar fake-user-app-0.0.1-SNAPSHOT.jar
+# Copy only the JAR from the build stage
+COPY --from=build /app/target/*.jar app.jar
 
-#ADD target/fake-user-app-0.0.1-SNAPSHOT.jar /fake-user-app/fake-user-app-0.0.1-SNAPSHOT.jar
-#RUN apt-get install curl
-#CMD "fake-user-app-0.0.1-SNAPSHOT.jar"
-#ENV VARIABLENAME=VALUE     we use to pass environment variables to container
-#VOLUME "/somepath"
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar"]

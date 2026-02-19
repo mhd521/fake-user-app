@@ -3,39 +3,88 @@ kind: Deployment
 metadata:
   name: fake-user-app
   namespace: fake-user-app
+  labels:
+    app: fake-user-app
+    tier: frontend
+    managed-by: github-actions
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: fake-user-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
         app: fake-user-app
     spec:
+      # Senior Signal: Enforce non-root execution for security
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
       containers:
         - name: app
-          image: hamoood5210/fake-user-app:latest
-          imagePullPolicy: IfNotPresent
+          # Use a generic tag that will be replaced by the CI build
+          image: fake-user-app:latest
+          imagePullPolicy: IfNotPresent # Important for Kind to use the locally loaded image
           ports:
             - containerPort: 8080
+          
+          # --- Senior Signal: Resource Management (The "Anti-OOMKilled" Fix) ---
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # --- Senior Signal: Observability & Reliability (Health Probes) ---
+          # Assumes Spring Boot Actuator is added to pom.xml
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+
           env:
             - name: SPRING_DATASOURCE_URL
-              value: jdbc:postgresql://my-postgres-db-2:5432/fake_user_app
+              # Use the Kubernetes service name for the database
+              value: "jdbc:postgresql://my-postgres-db-2:5432/fake_user_app"
             - name: SPRING_DATASOURCE_USERNAME
-              value: postgres
+              value: "postgres"
             - name: SPRING_DATASOURCE_PASSWORD
-              value: admin
+              value: "admin"
+          
+          # --- Senior Signal: Container Security ---
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: fake-user-app
+  name: fake-user-app-service
   namespace: fake-user-app
 spec:
   selector:
     app: fake-user-app
   ports:
-    - name: http
-      port: 8080
+    - protocol: TCP
+      port: 8080 # Expose the service on port 8080
       targetPort: 8080
+  type: ClusterIP
