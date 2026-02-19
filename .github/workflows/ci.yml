@@ -1,0 +1,82 @@
+name: CI - Kind + Playwright (Build-per-Build)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- 1. Build Docker image using Multi-stage Dockerfile ----
+      # This builds the JAR and the image in one self-contained environment
+      - name: Build Docker image
+        run: docker build -t fake-user-app:latest .
+
+      # ---- 2. Create Kind Cluster ----
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ci
+
+      # ---- 3. Load freshly built image into Kind ----
+      # This is the "Build per Build" magic that ensures you test the latest code
+      - name: Load image into kind
+        run: kind load docker-image fake-user-app:latest --name ci
+
+      # ---- 4. Deploy to Kubernetes ----
+      - name: Apply manifests
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/postgres.yaml
+          kubectl apply -f k8s/fake-user-app.yaml
+
+      # ---- 5. Wait for Rollout (Senior Observability) ----
+      - name: Wait for Deployment Readiness
+        run: |
+          # Wait for Postgres StatefulSet
+          kubectl -n fake-user-app rollout status statefulset/my-postgres-db-2 --timeout=240s
+          
+          # Wait for App Deployment (This uses the Liveness/Readiness probes we added)
+          if ! kubectl -n fake-user-app rollout status deployment/fake-user-app --timeout=300s; then
+            echo "---- Deployment Failed. Capturing Cluster State for RCA ----"
+            kubectl -n fake-user-app get pods -o wide
+            kubectl -n fake-user-app describe pods -l app=fake-user-app
+            kubectl -n fake-user-app logs -l app=fake-user-app --tail=400
+            exit 1
+          fi
+
+      # ---- 6. Quality Gate: Run Playwright Tests ----
+      # This is where you execute your automated validation against the cluster
+      - name: Setup Playwright
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright API Tests
+        run: |
+          # Use port-forwarding to talk to the cluster-deployed app
+          kubectl -n fake-user-app port-forward service/fake-user-app-service 8080:8080 &
+          sleep 10 # Wait for port-forward to establish
+          
+          # Run Playwright tests against the local forwarded port
+          APP_URL=http://localhost:8080 npx playwright test
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      # ---- 7. Cleanup ----
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name ci
