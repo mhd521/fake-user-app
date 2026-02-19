@@ -16,7 +16,7 @@ jobs:
       # ---- 1. Build Docker image using Multi-stage Dockerfile ----
       # This builds the JAR and the image in one self-contained environment
       - name: Build Docker image
-        run: docker build -t fake-user-app:latest .
+        run: docker build -t fake-user-app:ci .
 
       # ---- 2. Create Kind Cluster ----
       - name: Create kind cluster
@@ -27,7 +27,7 @@ jobs:
       # ---- 3. Load freshly built image into Kind ----
       # This is the "Build per Build" magic that ensures you test the latest code
       - name: Load image into kind
-        run: kind load docker-image fake-user-app:latest --name ci
+        run: kind load docker-image fake-user-app:ci --name ci
 
       # ---- 4. Deploy to Kubernetes ----
       - name: Apply manifests
