@@ -29,8 +29,8 @@ spec:
       containers:
         - name: app
           # Use a generic tag that will be replaced by the CI build
-          image: fake-user-app:latest
-          imagePullPolicy: IfNotPresent # Important for Kind to use the locally loaded image
+          image: fake-user-app:ci
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           
@@ -59,12 +59,11 @@ spec:
             periodSeconds: 20
 
           env:
-            - name: SPRING_DATASOURCE_URL
-              # Use the Kubernetes service name for the database
+            - name: DB_URL
               value: "jdbc:postgresql://my-postgres-db-2:5432/fake_user_app"
-            - name: SPRING_DATASOURCE_USERNAME
+            - name: DB_USERNAME
               value: "postgres"
-            - name: SPRING_DATASOURCE_PASSWORD
+            - name: DB_PASSWORD
               value: "admin"
           
           # --- Senior Signal: Container Security ---
