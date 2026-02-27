@@ -6,7 +6,7 @@ A **Senior SDET / Quality Platform Engineering** portfolio project demonstrating
 
 ---
 
-## 👋 What This Demonstrates (For Hiring Managers)
+## 👋 What This Demonstrates 
 
 Most SDET portfolios show a test framework in isolation. This project shows the full picture: a real service, a real database, a real Kubernetes environment, and a real automated quality gate — all wired together and running on every commit via GitHub Actions.
 
